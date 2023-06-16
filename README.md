@@ -6,17 +6,6 @@ The tool is automated, but still under development.
 
 A Web interface will be available for easier management. 
 
-## Authors
-
-- [@M58](https://www.github.com/MarchandRobin)
-- [@Naylh](https://www.github.com/Naylh)
-- [@couttcoutt](https://www.github.com/coutand-bastien)
-
-
-
-
-
-
 ## Badges
 
 Add badges from somewhere like: [shields.io](https://shields.io/)
