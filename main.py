@@ -14,7 +14,7 @@ from termcolor import colored
 
 headers = {
     "accept": "application/json",
-    "x-apikey": "bb18a62f2101e29a40880b6b92e39bdddb97e55c3240a056139e18d291a91d1d"
+    "x-apikey": "Your_API_key"
 }
 
 try :
