@@ -11,6 +11,7 @@ import subprocess
 import re
 from termcolor import colored
 
+
 headers = {
     "accept": "application/json",
     "x-apikey": "bb18a62f2101e29a40880b6b92e39bdddb97e55c3240a056139e18d291a91d1d"
@@ -32,6 +33,14 @@ File = re.compile(r"\.c(?!\w)|\.cpp(?!\w)|\.exe(?!\w)", re.IGNORECASE)
 
 
 def is_binary(file_path):
+    """Function to check if a file is binary or not
+
+    Args:
+        file_path (str): Path to the file
+
+    Returns:
+        bool: True if the file is binary, False otherwise
+    """
     try:
         with open(file_path, "rb") as file:
             content = file.read()
@@ -59,6 +68,14 @@ def is_binary(file_path):
 
 
 def get_metadata(file_path):
+    """Function to get metadata of a file
+
+    Args:
+        file_path (str): Path to the file
+
+    Returns:
+        list: List of lists containing metadata
+    """
     with exiftool.ExifTool() as et:
         metadata = et.get_metadata_batch([file_path])
 
@@ -79,6 +96,17 @@ def get_metadata(file_path):
 
 
 def get_decoded_content(file_path):
+    """Function to get decoded content of a file
+
+    Args:
+        file_path (str): Path to the file
+
+    Raises:
+        ValueError: If the file cannot be decoded with any of the encodings
+
+    Returns:
+        str: Decoded content of the file
+    """
     with open(file_path, "rb") as file:
         content = file.read()
         encodings = ["utf-8", "latin-1", "ascii"]  # Add more encodings if necessary
@@ -95,16 +123,32 @@ def get_decoded_content(file_path):
 
 
 def get_additional_info(decoded_content):
+    """Function to get additional information from the decoded content of a file
+
+    Args:
+        decoded_content (str): Decoded content of the file
+
+    Returns:
+        list: List of lists containing additional information
+    """
     additional_info_table = [["OS", ", ".join(set(OS.findall(decoded_content)))],
                              ["Linux Distribution", ", ".join(set(Linux_Distribution.findall(decoded_content)))],
                              ["Ubuntu Version", ", ".join(set(Ubuntu_Version.findall(decoded_content)) or ["Not Found"])],
                              ["File", ", ".join(set(File.findall(decoded_content)))],
-                             ["isStripped", "True" if "strip" in subprocess.check_output(["file", file_path]).decode("utf-8") else "False"]]
+                             ["isStripped", "False" if "not stripped" in subprocess.check_output(["file", file_path]).decode("utf-8") else "True"]]
 
     return additional_info_table
 
 
 def get_virus_total_results(content):
+    """Function to get VirusTotal results of a file
+
+    Args:
+        content (str): Content of the file
+
+    Returns:
+        dict: Dictionary containing VirusTotal results
+    """
     content_encoded = content.encode("utf-8") 
     hash_md5 = hashlib.md5(content_encoded).hexdigest()
     url = "https://www.virustotal.com/api/v3/files/" + hash_md5
@@ -139,6 +183,16 @@ def get_virus_total_results(content):
         return "Error: " + str(response.status_code)
 
 def generate_json_output(metadata, additional_info, virus_total_results):
+    """Function to generate JSON output
+
+    Args:
+        metadata (str): Metadata of the file
+        additional_info (str): Additional information of the file
+        virus_total_results (str): VirusTotal results of the file
+
+    Returns:
+        str: JSON output
+    """
     result = {
         "metadata": metadata,
         "additional_info": additional_info,
@@ -149,6 +203,14 @@ def generate_json_output(metadata, additional_info, virus_total_results):
 
 
 def return_protection_of_file(file_path):
+    """Function to return protection of a file
+
+    Args:
+        file_path (str): Path to the file
+
+    Returns:
+        list: List of lists containing protection information
+    """
     try:
         output = subprocess.check_output(["checksec", "--file", file_path], stderr=subprocess.STDOUT)
         output = output.decode("utf-8")
@@ -167,9 +229,20 @@ def return_protection_of_file(file_path):
     
 
 def summarize_binary_behavior(file_path):
+    """Function to summarize binary behavior
+
+    Args:
+        file_path (str): Path to the file
+
+    Returns:
+        list: List of lists containing summarized binary behavior
+    """
     import subprocess
     def check_file_access(file_path):
+        print("Send 'Enter' twice to continue")
+
         try:
+            
             output = subprocess.check_output(["strace", "-e", "file", file_path], stderr=subprocess.STDOUT)
             output = output.decode("utf-8")
 
@@ -183,6 +256,14 @@ def summarize_binary_behavior(file_path):
             return "Error"
 
     def check_subprocess_creation(file_path):
+        """Function to check subprocess creation
+
+        Args:
+            file_path (str): Path to the file
+
+        Returns:
+            list: List of subprocesses
+        """
         try:
             output = subprocess.check_output(["strace", "-f", "-e", "execve", "-s", "10000", file_path], stderr=subprocess.STDOUT)
             output = output.decode("utf-8")
@@ -222,17 +303,16 @@ def summarize_binary_behavior(file_path):
     return output
 
 
-def list_functions_in_binary(file_path):
-    try:
-        output = subprocess.check_output(["gdb", "-batch", "-ex", "python import sys; sys.path.insert(0, '')", "-ex", "python import gdb; gdb.execute('file " + file_path + "')", "-ex", "python import gdb; print(gdb.execute('info functions', to_string=True))"], stderr=subprocess.STDOUT)
-        functions_output = output.decode("utf-8")
-        functions_list = functions_output.splitlines()[1:]  # Skip the first line (header)
-        return functions_list
-    except subprocess.CalledProcessError:
-        return []
-    
 
 def parse_function(functions):
+    """Function to parse functions
+
+    Args:
+        functions (list): List of functions
+
+    Returns:
+        list: List of parsed functions
+    """
     functions_list = []
     for function in functions:
         function = function.replace("Non-debugging symbols:", "")
@@ -250,6 +330,14 @@ def parse_function(functions):
 
 
 def disassemble_function(function):
+    """Function to disassemble a function
+
+    Args:
+        function (str): Function to disassemble
+
+    Returns:
+        list: List of disassembled function
+    """
     try:
         output = subprocess.check_output(["gdb", "-batch", "-ex", "python import sys; sys.path.insert(0, '')", "-ex", "python import gdb; gdb.execute('file " + file_path + "')", "-ex", "python import gdb; print(gdb.execute('disassemble " + function + "', to_string=True))"], stderr=subprocess.STDOUT)
         disassembly_output = output.decode("utf-8")
@@ -259,8 +347,34 @@ def disassemble_function(function):
         return []
     
 
+def list_functions_in_binary(file_path):
+    """Function to list functions in a binary
+
+    Args:
+        file_path (str): Path to the file
+
+    Returns:
+        list: List of functions in the binary
+    """
+    try:
+        output = subprocess.check_output(["gdb", "-batch", "-ex", "python import sys; sys.path.insert(0, '')", "-ex", "python import gdb; gdb.execute('file " + file_path + "')", "-ex", "python import gdb; print(gdb.execute('info functions', to_string=True))"], stderr=subprocess.STDOUT)
+        functions_output = output.decode("utf-8")
+        functions_list = functions_output.splitlines()[1:]  # Skip the first line (header)
+        return functions_list
+    except subprocess.CalledProcessError:
+        return []
+
+
 if is_binary(file_path):
+    """Function to check if a file is a binary
+    """
     metadata = get_metadata(file_path)
+    print("Checksec output:")
+    protection_info = return_protection_of_file(file_path)
+    table = tabulate(protection_info, headers=["Security Aspect", "Status"], tablefmt="pipe")
+    table = table.replace("found", colored("Found", "green"))
+    table = table.replace("enabled", colored("Enabled", "red"))
+    print(table)
     decoded_content = get_decoded_content(file_path)
     additional_info = get_additional_info(decoded_content)
     virus_total_results = get_virus_total_results(decoded_content)
@@ -280,15 +394,14 @@ if is_binary(file_path):
             print(f"  - {line}")
         print("")
 
-    print("Checksec output:")
-    protection_info = return_protection_of_file(file_path)
-    table = tabulate(protection_info, headers=["Security Aspect", "Status"], tablefmt="pipe")
-    # Color found in green and enabled in red
-    table = table.replace("found", colored("Found", "green"))
-    table = table.replace("enabled", colored("Enabled", "red"))
-
-    print(table)
-
-        
+    print("Checking for strcmp usage...")
+    for function in functions_list:
+        disassembly = disassemble_function(function)
+        for line in disassembly:
+            if "strcmp" in line:
+                print(f"  - strcmp found in {function} at address {line.split()[0]}")
+                print("")
+    print("")
+ 
 else:
     print("File is not binary")
