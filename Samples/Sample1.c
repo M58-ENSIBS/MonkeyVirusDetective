@@ -1,3 +1,5 @@
+// Create a c with 2 basics function which add and substract 2 numbers
+
 #include <stdio.h>
 
 int add(int a, int b)
