@@ -9,6 +9,7 @@ import sys
 import os
 import subprocess
 import re
+from termcolor import colored
 
 headers = {
     "accept": "application/json",
@@ -28,15 +29,6 @@ Linux_Distribution = re.compile(r"(?i)(?:\b|(?<=\s))(Ubuntu|Debian|CentOS|Fedora
 Ubuntu_Version = re.compile(r"Ubuntu (\d+\.\d+\.\d+)", re.IGNORECASE)
 File = re.compile(r"\.c(?!\w)|\.cpp(?!\w)|\.exe(?!\w)", re.IGNORECASE)
 
-
-def list_functions_in_binary(file_path):
-    try:
-        output = subprocess.check_output(["gdb", "-batch", "-ex", "python import sys; sys.path.insert(0, '')", "-ex", "python import gdb; gdb.execute('file " + file_path + "')", "-ex", "python import gdb; print(gdb.execute('info functions', to_string=True))"], stderr=subprocess.STDOUT)
-        functions_output = output.decode("utf-8")
-        functions_list = functions_output.splitlines()[1:]  # Skip the first line (header)
-        return functions_list
-    except subprocess.CalledProcessError:
-        return []
 
 
 def is_binary(file_path):
@@ -107,12 +99,13 @@ def get_additional_info(decoded_content):
                              ["Linux Distribution", ", ".join(set(Linux_Distribution.findall(decoded_content)))],
                              ["Ubuntu Version", ", ".join(set(Ubuntu_Version.findall(decoded_content)) or ["Not Found"])],
                              ["File", ", ".join(set(File.findall(decoded_content)))],
-                             ["isStriped", "True" if "strip" in subprocess.check_output(["file", file_path]).decode("utf-8") else "False"]]
+                             ["isStripped", "True" if "strip" in subprocess.check_output(["file", file_path]).decode("utf-8") else "False"]]
+
     return additional_info_table
 
 
 def get_virus_total_results(content):
-    content_encoded = content.encode("utf-8")  # Encode the content as UTF-8 bytes
+    content_encoded = content.encode("utf-8") 
     hash_md5 = hashlib.md5(content_encoded).hexdigest()
     url = "https://www.virustotal.com/api/v3/files/" + hash_md5
 
@@ -154,6 +147,25 @@ def generate_json_output(metadata, additional_info, virus_total_results):
     result_json = json.dumps(result, indent=4)
     return result_json
 
+
+def return_protection_of_file(file_path):
+    try:
+        output = subprocess.check_output(["checksec", "--file", file_path], stderr=subprocess.STDOUT)
+        output = output.decode("utf-8")
+        output = output.split("\n")
+        output = [line.split() for line in output]
+        output = [line for line in output if line]
+        output = output[1:]
+        for line in output:
+            del line[0]
+        output[2][0] = output[2][0] + " " + output[2][1]
+        del output[2][1]
+        return output
+    except subprocess.CalledProcessError as e:
+        print("Error:", e.output.decode("utf-8"))
+        return []
+    
+
 def summarize_binary_behavior(file_path):
     import subprocess
     def check_file_access(file_path):
@@ -161,7 +173,6 @@ def summarize_binary_behavior(file_path):
             output = subprocess.check_output(["strace", "-e", "file", file_path], stderr=subprocess.STDOUT)
             output = output.decode("utf-8")
 
-            # Search for file-related system calls in the strace output
             file_access_regex = re.compile(r"openat\(AT_FDCWD, \".*\", .*")
             file_access_regex2 = re.compile(r"access\(.*\)")
             file_accesses = file_access_regex.findall(output)
@@ -183,11 +194,9 @@ def summarize_binary_behavior(file_path):
         except subprocess.CalledProcessError:
             return "Error"
 
-    # Get file accesses and subprocess creations
     file_accesses = check_file_access(file_path)
     subprocesses = check_subprocess_creation(file_path)
 
-    # Prepare the summarized overview
     summary = f"Binary Summary: {file_path}\n"
     summary += "=" * 50 + "\n"
 
@@ -213,6 +222,42 @@ def summarize_binary_behavior(file_path):
     return output
 
 
+def list_functions_in_binary(file_path):
+    try:
+        output = subprocess.check_output(["gdb", "-batch", "-ex", "python import sys; sys.path.insert(0, '')", "-ex", "python import gdb; gdb.execute('file " + file_path + "')", "-ex", "python import gdb; print(gdb.execute('info functions', to_string=True))"], stderr=subprocess.STDOUT)
+        functions_output = output.decode("utf-8")
+        functions_list = functions_output.splitlines()[1:]  # Skip the first line (header)
+        return functions_list
+    except subprocess.CalledProcessError:
+        return []
+    
+
+def parse_function(functions):
+    functions_list = []
+    for function in functions:
+        function = function.replace("Non-debugging symbols:", "")
+        function = function.split(" ")[-1]
+        if not function.startswith("_"):
+            if not function.endswith("_clones") and not function.endswith("_dummy"):
+                for line in function:
+                    if line == "":
+                        function.remove(line)
+                if function != "":
+                    print("  - " + function)
+                    functions_list.append(function)
+    print("")
+    return functions_list
+
+
+def disassemble_function(function):
+    try:
+        output = subprocess.check_output(["gdb", "-batch", "-ex", "python import sys; sys.path.insert(0, '')", "-ex", "python import gdb; gdb.execute('file " + file_path + "')", "-ex", "python import gdb; print(gdb.execute('disassemble " + function + "', to_string=True))"], stderr=subprocess.STDOUT)
+        disassembly_output = output.decode("utf-8")
+        disassembly_list = disassembly_output.splitlines()[1:]  # Skip the first line (header)
+        return disassembly_list
+    except subprocess.CalledProcessError:
+        return []
+    
 
 if is_binary(file_path):
     metadata = get_metadata(file_path)
@@ -220,15 +265,30 @@ if is_binary(file_path):
     additional_info = get_additional_info(decoded_content)
     virus_total_results = get_virus_total_results(decoded_content)
     json_output = generate_json_output(metadata, additional_info, virus_total_results)
-
-
     print(json_output)
     file_accesses = summarize_binary_behavior(file_path)
     print(f"File accesses: {file_accesses}")
     functions = list_functions_in_binary(file_path)
-    print(f"Found {(len(functions)-1)/2} functions in the binary:")
-    for function in functions:
-        print(function)
+    print(f"Found functions:")
+    functions_list = parse_function(functions)
+    for function in functions_list:
+        disassembly = disassemble_function(function)
+        print(f"Disassembly for {function}:")
+        if not disassembly:
+            print("  - No disassembly found")
+        for line in disassembly:
+            print(f"  - {line}")
+        print("")
 
+    print("Checksec output:")
+    protection_info = return_protection_of_file(file_path)
+    table = tabulate(protection_info, headers=["Security Aspect", "Status"], tablefmt="pipe")
+    # Color found in green and enabled in red
+    table = table.replace("found", colored("Found", "green"))
+    table = table.replace("enabled", colored("Enabled", "red"))
+
+    print(table)
+
+        
 else:
     print("File is not binary")
